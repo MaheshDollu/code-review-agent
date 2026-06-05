@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: code-review-agent
+
+  ai:
+    openai:
+      # Groq's OpenAI-compatible endpoint — just change base-url + api-key
+      base-url: https://api.groq.com/openai
+      api-key: ${GROQ_API_KEY}
+      chat:
+        options:
+          model: llama3-70b-8192
+          temperature: 0.1
+          max-tokens: 2048
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.codereviewer: INFO
+    org.bsc.langgraph4j: INFO
+    org.springframework.ai: WARN
+
+app:
+  github:
+    token: ${GITHUB_TOKEN}
+  review:
+    # true  = pause before posting to GitHub; send /api/review/resume to continue
+    hitl-enabled: false
+    # false = dry-run; review is printed to console, NOT posted to GitHub
+    post-to-github: true

@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CodeSentinel — Autonomous PR Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:       #080c10;
+    --surface:  #0d1117;
+    --border:   #1e2d3d;
+    --accent:   #00d9a3;
+    --accent2:  #0095ff;
+    --warn:     #ff6b35;
+    --critical: #ff3b5c;
+    --major:    #ffaa00;
+    --minor:    #00d9a3;
+    --text:     #e0eaf4;
+    --muted:    #4a6070;
+    --glow:     rgba(0,217,163,0.15);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Grid background ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,217,163,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,217,163,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Header ── */
+  header {
+    position: relative; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 40px;
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    background: rgba(8,12,16,0.8);
+  }
+
+  .logo {
+    display: flex; align-items: center; gap: 12px;
+    font-family: 'Syne', sans-serif;
+    font-size: 20px; font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .logo span { color: var(--accent); }
+
+  .badge {
+    font-size: 10px; font-weight: 500;
+    padding: 3px 8px; border-radius: 4px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    letter-spacing: 1px;
+  }
+
+  /* ── Main layout ── */
+  main {
+    position: relative; z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 24px;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    text-align: center;
+    margin-bottom: 56px;
+    animation: fadeUp 0.6s ease both;
+  }
+  .hero h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(32px, 5vw, 56px);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -2px;
+    margin-bottom: 16px;
+  }
+  .hero h1 em {
+    font-style: normal;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero p {
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.7;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  /* ── Agent pipeline visual ── */
+  .pipeline {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0;
+    margin: 32px 0 48px;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .pipe-node {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    min-width: 80px;
+    transition: all 0.3s ease;
+    position: relative;
+  }
+  .pipe-node .icon { font-size: 18px; }
+  .pipe-node.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 16px var(--glow);
+  }
+  .pipe-node.active::after {
+    content: '';
+    position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1s ease infinite;
+  }
+  .pipe-arrow {
+    color: var(--border);
+    font-size: 18px;
+    padding: 0 2px;
+  }
+  .pipe-parallel {
+    display: flex; flex-direction: column; gap: 4px;
+    position: relative;
+  }
+  .pipe-parallel::before {
+    content: '';
+    position: absolute; left: -8px; top: 50%; transform: translateY(-50%);
+    width: 1px; height: 70%;
+    background: var(--border);
+  }
+
+  /* ── Input card ── */
+  .input-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 32px;
+    animation: fadeUp 0.6s 0.1s ease both;
+  }
+
+  .input-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .input-row {
+    display: flex; gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .pr-input {
+    flex: 1; min-width: 280px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .pr-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--glow);
+  }
+  .pr-input::placeholder { color: var(--muted); }
+
+  .btn-review {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none; border-radius: 10px;
+    padding: 14px 28px;
+    color: #000;
+    font-family: 'Syne', sans-serif;
+    font-size: 14px; font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .btn-review:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(0,217,163,0.3);
+  }
+  .btn-review:disabled {
+    opacity: 0.5; cursor: not-allowed; transform: none;
+  }
+
+  /* ── Options row ── */
+  .options-row {
+    display: flex; gap: 24px; margin-top: 16px;
+    align-items: center; flex-wrap: wrap;
+  }
+  .toggle-wrap {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 12px; color: var(--muted); cursor: pointer;
+  }
+  .toggle {
+    width: 36px; height: 20px;
+    background: var(--border); border-radius: 10px;
+    position: relative; cursor: pointer;
+    transition: background 0.2s;
+    border: none;
+  }
+  .toggle::after {
+    content: '';
+    position: absolute; top: 3px; left: 3px;
+    width: 14px; height: 14px;
+    background: var(--muted); border-radius: 50%;
+    transition: left 0.2s, background 0.2s;
+  }
+  .toggle.on { background: rgba(0,217,163,0.2); border: 1px solid var(--accent); }
+  .toggle.on::after { left: 18px; background: var(--accent); }
+
+  /* ── Status pipeline ── */
+  .status-pipeline {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 32px;
+    margin-bottom: 32px;
+    animation: fadeUp 0.4s ease both;
+  }
+  .status-pipeline.visible { display: block; }
+
+  .status-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 13px; font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .spinner {
+    width: 12px; height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .steps {
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .step {
+    display: flex; align-items: center; gap: 14px;
+    font-size: 12px; color: var(--muted);
+    transition: color 0.3s;
+  }
+  .step-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--border); flex-shrink: 0;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .step.running { color: var(--text); }
+  .step.running .step-dot {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse 1s ease infinite;
+  }
+  .step.done { color: var(--accent); }
+  .step.done .step-dot { background: var(--accent); }
+
+  /* ── Results card ── */
+  .result-card {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    animation: fadeUp 0.5s ease both;
+    margin-bottom: 32px;
+  }
+  .result-card.visible { display: block; }
+
+  .result-header {
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .result-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 16px; font-weight: 700;
+  }
+  .pr-meta {
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .meta-tag {
+    font-size: 11px; padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    display: flex; align-items: center; gap: 5px;
+  }
+
+  /* ── Severity summary ── */
+  .severity-bar {
+    display: flex; gap: 0;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap; gap: 16px;
+  }
+  .sev-pill {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 12px; font-weight: 500;
+    border: 1px solid;
+  }
+  .sev-pill.critical { color: var(--critical); border-color: rgba(255,59,92,0.3); background: rgba(255,59,92,0.08); }
+  .sev-pill.major    { color: var(--major);    border-color: rgba(255,170,0,0.3);  background: rgba(255,170,0,0.08); }
+  .sev-pill.minor    { color: var(--minor);    border-color: rgba(0,217,163,0.3);  background: rgba(0,217,163,0.08); }
+  .sev-count {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px; font-weight: 800;
+    line-height: 1;
+  }
+
+  /* ── Findings list ── */
+  .findings {
+    padding: 24px 32px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  .finding {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .finding:hover { border-color: var(--muted); }
+  .finding.critical { border-left: 3px solid var(--critical); }
+  .finding.major    { border-left: 3px solid var(--major); }
+  .finding.minor    { border-left: 3px solid var(--minor); }
+
+  .finding-header {
+    padding: 14px 18px;
+    display: flex; align-items: center; gap: 12px;
+    cursor: pointer; user-select: none;
+    flex-wrap: wrap; gap: 8px;
+  }
+  .sev-badge {
+    font-size: 10px; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px;
+    letter-spacing: 0.8px; text-transform: uppercase;
+  }
+  .sev-badge.critical { background: rgba(255,59,92,0.15); color: var(--critical); }
+  .sev-badge.major    { background: rgba(255,170,0,0.15);  color: var(--major); }
+  .sev-badge.minor    { background: rgba(0,217,163,0.15);  color: var(--minor); }
+
+  .finding-cat {
+    font-size: 12px; font-weight: 500; color: var(--text);
+    font-family: 'Syne', sans-serif;
+  }
+  .finding-file {
+    font-size: 11px; color: var(--accent2);
+    margin-left: auto;
+  }
+  .finding-agent {
+    font-size: 10px; color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 2px 6px; border-radius: 4px;
+  }
+  .chevron {
+    margin-left: auto; color: var(--muted);
+    font-size: 12px;
+    transition: transform 0.2s;
+  }
+  .finding.open .chevron { transform: rotate(180deg); }
+
+  .finding-body {
+    display: none;
+    padding: 0 18px 18px;
+    border-top: 1px solid var(--border);
+  }
+  .finding.open .finding-body { display: block; }
+
+  .finding-label {
+    font-size: 10px; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--muted);
+    margin: 14px 0 6px;
+  }
+  .finding-text {
+    font-size: 12px; color: var(--text); line-height: 1.7;
+  }
+  .finding-fix {
+    font-size: 12px; color: var(--accent); line-height: 1.7;
+  }
+
+  /* ── Raw review tab ── */
+  .tabs {
+    display: flex; gap: 0;
+    padding: 0 32px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    padding: 14px 20px;
+    font-size: 12px; font-weight: 500;
+    cursor: pointer; color: var(--muted);
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+    letter-spacing: 0.5px;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .raw-review {
+    padding: 24px 32px;
+    font-size: 12px; line-height: 1.8;
+    color: var(--muted);
+    white-space: pre-wrap;
+    max-height: 500px;
+    overflow-y: auto;
+  }
+
+  /* ── GitHub posted banner ── */
+  .posted-banner {
+    display: none;
+    align-items: center; gap: 12px;
+    padding: 14px 20px;
+    background: rgba(0,217,163,0.08);
+    border: 1px solid rgba(0,217,163,0.3);
+    border-radius: 10px;
+    font-size: 13px;
+    color: var(--accent);
+    margin: 0 32px 24px;
+  }
+  .posted-banner.visible { display: flex; }
+
+  /* ── Error card ── */
+  .error-card {
+    display: none;
+    background: rgba(255,59,92,0.06);
+    border: 1px solid rgba(255,59,92,0.3);
+    border-radius: 12px;
+    padding: 20px 24px;
+    color: var(--critical);
+    font-size: 13px;
+    margin-bottom: 24px;
+    animation: fadeUp 0.3s ease both;
+  }
+  .error-card.visible { display: block; }
+  .error-card strong { display: block; margin-bottom: 6px; font-family: 'Syne', sans-serif; }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    padding: 40px 24px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    border-top: 1px solid var(--border);
+    position: relative; z-index: 1;
+  }
+  footer span { color: var(--accent); }
+
+  /* ── Animations ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🛡</div>
+    Code<span>Sentinel</span>
+  </div>
+  <div class="badge">MULTI-AGENT · GROQ · LANGGRAPH4J</div>
+</header>
+
+<main>
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>Autonomous<br/><em>PR Code Review</em></h1>
+    <p>5-node LangGraph4J pipeline — Security, Logic &amp; Style agents analyze your PR diff in parallel, then a Supervisor merges findings and posts a structured review to GitHub.</p>
+
+    <!-- Pipeline visual -->
+    <div class="pipeline">
+      <div class="pipe-node" id="pn-fetch">
+        <span class="icon">📡</span>
+        <span>FETCHER</span>
+      </div>
+      <div class="pipe-arrow">›</div>
+      <div class="pipe-parallel">
+        <div class="pipe-node" id="pn-sec"><span class="icon">🔐</span><span>SECURITY</span></div>
+        <div class="pipe-node" id="pn-log"><span class="icon">🧠</span><span>LOGIC</span></div>
+        <div class="pipe-node" id="pn-sty"><span class="icon">✏️</span><span>STYLE</span></div>
+      </div>
+      <div class="pipe-arrow">›</div>
+      <div class="pipe-node" id="pn-sup"><span class="icon">⚖️</span><span>SUPERVISOR</span></div>
+      <div class="pipe-arrow">›</div>
+      <div class="pipe-node" id="pn-post"><span class="icon">💬</span><span>GITHUB</span></div>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="input-card">
+    <label class="input-label">Pull Request URL</label>
+    <div class="input-row">
+      <input class="pr-input" id="prUrl" type="text"
+        placeholder="https://github.com/owner/repo/pull/42"/>
+      <button class="btn-review" id="reviewBtn" onclick="startReview()">
+        <span>▶</span> Run Review
+      </button>
+    </div>
+    <div class="options-row">
+      <label class="toggle-wrap">
+        <button class="toggle" id="postToggle" onclick="this.classList.toggle('on')"></button>
+        Post review to GitHub
+      </label>
+      <label class="toggle-wrap">
+        <button class="toggle" id="streamToggle" onclick="this.classList.toggle('on')"></button>
+        SSE streaming mode
+      </label>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div class="error-card" id="errorCard">
+    <strong>⚠ Error</strong>
+    <span id="errorMsg"></span>
+  </div>
+
+  <!-- Status pipeline -->
+  <div class="status-pipeline" id="statusPanel">
+    <div class="status-title">
+      <div class="spinner" id="spinner"></div>
+      <span id="statusTitle">Running pipeline...</span>
+    </div>
+    <div class="steps">
+      <div class="step" id="s-fetch"><div class="step-dot"></div>Fetching PR diff from GitHub API</div>
+      <div class="step" id="s-agents"><div class="step-dot"></div>Security · Logic · Style agents analyzing</div>
+      <div class="step" id="s-super"><div class="step-dot"></div>Supervisor merging &amp; ranking findings</div>
+      <div class="step" id="s-post"><div class="step-dot"></div>Building review comment</div>
+      <div class="step" id="s-done"><div class="step-dot"></div>Complete</div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="result-card" id="resultCard">
+    <div class="result-header">
+      <div class="result-title" id="resultTitle">Review Complete</div>
+      <div class="pr-meta" id="prMeta"></div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('findings')">Findings</div>
+      <div class="tab" onclick="switchTab('raw')">Raw Markdown</div>
+    </div>
+
+    <div class="tab-content active" id="tab-findings">
+      <div class="severity-bar" id="severityBar"></div>
+      <div class="findings" id="findingsList"></div>
+    </div>
+
+    <div class="tab-content" id="tab-raw">
+      <div class="raw-review" id="rawReview"></div>
+    </div>
+
+    <div class="posted-banner" id="postedBanner">
+      ✓ Review posted to GitHub PR
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  Built with <span>LangGraph4J</span> · <span>Spring AI</span> · <span>Groq llama3-70b</span> · Spring Boot 3.4
+</footer>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let currentTab = 'findings';
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  currentTab = name;
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0 && name === 'findings') || (i === 1 && name === 'raw'));
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ── Pipeline node animation ────────────────────────────────────────────────
+function activateNode(id) {
+  document.querySelectorAll('.pipe-node').forEach(n => n.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+function activateStep(id, state) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'step ' + state;
+}
+
+// ── Main review function ───────────────────────────────────────────────────
+async function startReview() {
+  const prUrl = document.getElementById('prUrl').value.trim();
+  if (!prUrl) {
+    showError('Please enter a GitHub PR URL.');
+    return;
+  }
+  if (!prUrl.match(/github\.com\/.+\/.+\/pull\/\d+/)) {
+    showError('URL must be a GitHub PR link: https://github.com/owner/repo/pull/42');
+    return;
+  }
+
+  const useStream = document.getElementById('streamToggle').classList.contains('on');
+
+  // Reset UI
+  hideError();
+  hideResult();
+  showStatus();
+  setBtn(true);
+  resetSteps();
+  resetNodes();
+
+  try {
+    if (useStream) {
+      await runStream(prUrl);
+    } else {
+      await runSync(prUrl);
+    }
+  } catch (err) {
+    showError(err.message || 'Unexpected error. Is the server running on port 8080?');
+    hideStatus();
+    setBtn(false);
+  }
+}
+
+// ── Synchronous mode ───────────────────────────────────────────────────────
+async function runSync(prUrl) {
+  // Animate steps with delays to show progress
+  await animateStep('pn-fetch', 's-fetch', 800);
+  await animateStep(null, 's-agents', 1200);
+  activateNode('pn-sec');
+  await sleep(400);
+  activateNode('pn-log');
+  await sleep(400);
+  activateNode('pn-sty');
+
+  const res = await fetch('/api/review', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prUrl })
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Server error ' + res.status }));
+    throw new Error(err.error || 'Server returned ' + res.status);
+  }
+
+  const data = await res.json();
+
+  await animateStep('pn-sup', 's-super', 400);
+  await animateStep('pn-post', 's-post', 400);
+  activateStep('s-done', 'done');
+  activateNode('pn-post');
+
+  finishStatus();
+  renderResult(data);
+}
+
+// ── SSE streaming mode ─────────────────────────────────────────────────────
+async function runStream(prUrl) {
+  return new Promise((resolve, reject) => {
+    const evtSource = new EventSource('/api/review/stream?prUrl=' + encodeURIComponent(prUrl));
+
+    // Workaround: SSE with POST needs EventSource polyfill or we use fetch streaming
+    evtSource.close();
+
+    // Use fetch with ReadableStream instead
+    fetch('/api/review/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prUrl })
+    }).then(async res => {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let stepIndex = 0;
+      const stepMap = [
+        ['pn-fetch',  's-fetch'],
+        ['pn-sec',    's-agents'],
+        ['pn-sup',    's-super'],
+        ['pn-post',   's-post'],
+      ];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            try {
+              const payload = JSON.parse(line.slice(5).trim());
+
+              if (payload.message && stepIndex < stepMap.length) {
+                const [node, step] = stepMap[stepIndex];
+                activateNode(node);
+                activateStep(step, 'running');
+                stepIndex++;
+              }
+
+              if (payload.renderedReview) {
+                activateStep('s-done', 'done');
+                activateNode('pn-post');
+                finishStatus();
+                renderResult(payload);
+                resolve();
+              }
+
+              if (payload.error) {
+                reject(new Error(payload.error));
+              }
+            } catch(e) { /* skip malformed */ }
+          }
+        }
+      }
+      resolve();
+    }).catch(reject);
+  });
+}
+
+// ── Render results ─────────────────────────────────────────────────────────
+function renderResult(data) {
+  setBtn(false);
+
+  // Title
+  document.getElementById('resultTitle').textContent =
+    data.prTitle ? `PR #${data.prNumber}: ${data.prTitle}` : 'Review Complete';
+
+  // Meta tags
+  const meta = document.getElementById('prMeta');
+  meta.innerHTML = '';
+  if (data.owner) addMeta(meta, '📁', `${data.owner}/${data.repo}`);
+  if (data.changedFiles) addMeta(meta, '📝', `${data.changedFiles.length} files changed`);
+
+  // Raw markdown
+  document.getElementById('rawReview').textContent = data.renderedReview || '';
+
+  // Parse findings
+  const findings = parseFindings(data.renderedReview || '');
+
+  // Severity summary
+  const bar = document.getElementById('severityBar');
+  bar.innerHTML = '';
+  const critCount = findings.filter(f => f.severity === 'CRITICAL').length;
+  const majCount  = findings.filter(f => f.severity === 'MAJOR').length;
+  const minCount  = findings.filter(f => f.severity === 'MINOR').length;
+
+  if (critCount) bar.innerHTML += pill('critical', '🔴', 'Critical', critCount);
+  if (majCount)  bar.innerHTML += pill('major',    '🟡', 'Major',    majCount);
+  if (minCount)  bar.innerHTML += pill('minor',    '🔵', 'Minor',    minCount);
+  if (!findings.length) bar.innerHTML = '<div style="color:var(--accent);font-size:13px;padding:8px 0">✅ No issues found — clean PR!</div>';
+
+  // Findings list
+  const list = document.getElementById('findingsList');
+  list.innerHTML = '';
+  if (findings.length === 0) {
+    list.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">All three agents reviewed the diff and found no issues.</div>';
+  }
+  findings.forEach((f, i) => {
+    list.innerHTML += findingHTML(f, i);
+  });
+
+  // GitHub posted banner
+  const posted = document.getElementById('postToggle').classList.contains('on');
+  document.getElementById('postedBanner').classList.toggle('visible', posted);
+
+  document.getElementById('resultCard').classList.add('visible');
+}
+
+function pill(cls, icon, label, count) {
+  return `<div class="sev-pill ${cls}">
+    <span class="sev-count">${count}</span>
+    <span>${icon} ${label}</span>
+  </div>`;
+}
+
+function addMeta(container, icon, text) {
+  const el = document.createElement('div');
+  el.className = 'meta-tag';
+  el.innerHTML = `${icon} ${text}`;
+  container.appendChild(el);
+}
+
+function findingHTML(f, i) {
+  return `
+  <div class="finding ${f.severity.toLowerCase()}" id="finding-${i}">
+    <div class="finding-header" onclick="toggleFinding(${i})">
+      <span class="sev-badge ${f.severity.toLowerCase()}">${f.severity}</span>
+      <span class="finding-cat">${f.category}</span>
+      <span class="finding-agent">${f.agent || ''}</span>
+      <span class="finding-file">${f.file}${f.line ? ':' + f.line : ''}</span>
+      <span class="chevron">▾</span>
+    </div>
+    <div class="finding-body">
+      <div class="finding-label">Issue</div>
+      <div class="finding-text">${escHtml(f.issue)}</div>
+      <div class="finding-label">Fix</div>
+      <div class="finding-fix">${escHtml(f.fix)}</div>
+    </div>
+  </div>`;
+}
+
+function toggleFinding(i) {
+  document.getElementById('finding-' + i).classList.toggle('open');
+}
+
+// ── Finding parser ─────────────────────────────────────────────────────────
+function parseFindings(text) {
+  const blocks = text.split('---').filter(b => b.trim());
+  const findings = [];
+  for (const block of blocks) {
+    const get = (key) => {
+      const m = block.match(new RegExp(key + ':\\s*(.+?)(?:\\n|$)', 'i'));
+      return m ? m[1].trim() : '';
+    };
+    const sev = get('SEVERITY');
+    if (!sev || !['CRITICAL','MAJOR','MINOR'].includes(sev)) continue;
+    findings.push({
+      severity: sev,
+      file:     get('FILE'),
+      line:     get('LINE'),
+      category: get('CATEGORY'),
+      agent:    get('AGENT'),
+      issue:    get('ISSUE'),
+      fix:      get('FIX'),
+    });
+  }
+  // Sort: CRITICAL → MAJOR → MINOR
+  const order = { CRITICAL: 0, MAJOR: 1, MINOR: 2 };
+  return findings.sort((a, b) => order[a.severity] - order[b.severity]);
+}
+
+// ── UI helpers ─────────────────────────────────────────────────────────────
+function showStatus() { document.getElementById('statusPanel').classList.add('visible'); }
+function hideStatus()  { document.getElementById('statusPanel').classList.remove('visible'); }
+function hideResult()  { document.getElementById('resultCard').classList.remove('visible'); }
+function setBtn(disabled) {
+  const btn = document.getElementById('reviewBtn');
+  btn.disabled = disabled;
+  btn.innerHTML = disabled ? '<div class="spinner"></div> Analyzing...' : '<span>▶</span> Run Review';
+}
+function showError(msg) {
+  document.getElementById('errorMsg').textContent = msg;
+  document.getElementById('errorCard').classList.add('visible');
+}
+function hideError() { document.getElementById('errorCard').classList.remove('visible'); }
+function resetSteps() {
+  ['s-fetch','s-agents','s-super','s-post','s-done'].forEach(id => {
+    activateStep(id, '');
+  });
+}
+function resetNodes() {
+  document.querySelectorAll('.pipe-node').forEach(n => n.classList.remove('active'));
+}
+function finishStatus() {
+  document.getElementById('spinner').style.display = 'none';
+  document.getElementById('statusTitle').textContent = 'Pipeline complete ✓';
+}
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function animateStep(nodeId, stepId, delay) {
+  if (nodeId) activateNode(nodeId);
+  activateStep(stepId, 'running');
+  await sleep(delay);
+  activateStep(stepId, 'done');
+}
+
+// ── Enter key support ──────────────────────────────────────────────────────
+document.getElementById('prUrl').addEventListener('keydown', e => {
+  if (e.key === 'Enter') startReview();
+});
+</script>
+</body>
+</html>
