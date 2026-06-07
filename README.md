@@ -13,7 +13,6 @@
 **A production-grade multi-agent LLM pipeline that reviews GitHub Pull Requests like a senior engineer.**  
 Paste a PR URL → 5 specialized AI agents analyze it in parallel → structured review posted back to GitHub.
 
-![CodeSentinel Demo](https://raw.githubusercontent.com/MaheshDollu/code-review-agent/main/docs/demo.png)
 
 </div>
 
