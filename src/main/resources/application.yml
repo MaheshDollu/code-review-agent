@@ -11,7 +11,7 @@ spring:
           temperature: 0.1
           max-tokens: 1024
 server:
-  port: 8080
+  port: ${PORT:8080}
 logging:
   level:
     com.codereviewer: INFO
