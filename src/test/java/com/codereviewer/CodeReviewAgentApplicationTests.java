@@ -1,9 +1,7 @@
 package com.codereviewer;
 
 import com.codereviewer.nodes.CommentBuilderNode;
-import com.codereviewer.nodes.SecurityAgentNode;
-import com.codereviewer.nodes.LogicAgentNode;
-import com.codereviewer.nodes.StyleAgentNode;
+import com.codereviewer.nodes.CombinedAnalysisNode;
 import com.codereviewer.nodes.SupervisorNode;
 import com.codereviewer.state.CodeReviewState;
 import org.junit.jupiter.api.Test;
@@ -25,13 +23,7 @@ class CodeReviewAgentApplicationTests {
     private GitHubClient gitHubClient;
 
     @Autowired
-    private SecurityAgentNode securityAgentNode;
-
-    @Autowired
-    private LogicAgentNode logicAgentNode;
-
-    @Autowired
-    private StyleAgentNode styleAgentNode;
+    private CombinedAnalysisNode combinedAnalysisNode;
 
     @Autowired
     private SupervisorNode supervisorNode;
@@ -43,10 +35,10 @@ class CodeReviewAgentApplicationTests {
         // Verifies all beans wire up correctly
     }
 
-    // ── SecurityAgentNode unit test ───────────────────────────────────────────
+    // ── CombinedAnalysisNode unit test ────────────────────────────────────────
 
     @Test
-    void securityAgent_returnsFindingsKey() throws Exception {
+    void combinedAnalysis_returnsMergedFindingsKey() throws Exception {
         String mockDiff = """
             -   String query = "SELECT * FROM users WHERE id = " + userId;
             +   String query = "SELECT * FROM users WHERE id = ?";
@@ -58,69 +50,25 @@ class CodeReviewAgentApplicationTests {
             "changedFiles", java.util.List.of("UserRepository.java")
         ));
 
-        Map<String, Object> result = securityAgentNode.apply(state);
+        Map<String, Object> result = combinedAnalysisNode.apply(state);
 
-        assertThat(result).containsKey("securityFindings");
-        assertThat(result.get("securityFindings").toString()).isNotBlank();
+        assertThat(result).containsKey("mergedFindings");
+        assertThat(result.get("mergedFindings").toString()).isNotBlank();
     }
 
-    // ── LogicAgentNode unit test ──────────────────────────────────────────────
+    // ── SupervisorNode unit test (passthrough) ────────────────────────────────
 
     @Test
-    void logicAgent_returnsFindingsKey() throws Exception {
-        String mockDiff = """
-            +   User user = userRepo.findById(id);
-            +   return user.getName();
-            """;
+    void supervisorNode_passesThroughMergedFindings() throws Exception {
+        String findings = "SEVERITY: CRITICAL\nFILE: Foo.java\nLINE: 10\nCATEGORY: SQL_INJECTION\nAGENT: SECURITY\nISSUE: SQL injection risk\nFIX: Use prepared statements\n---";
 
         CodeReviewState state = new CodeReviewState(Map.of(
-            "diffContent",  mockDiff,
-            "prTitle",      "Add user name endpoint",
-            "changedFiles", java.util.List.of("UserService.java")
-        ));
-
-        Map<String, Object> result = logicAgentNode.apply(state);
-
-        assertThat(result).containsKey("logicFindings");
-        assertThat(result.get("logicFindings").toString()).isNotBlank();
-    }
-
-    // ── StyleAgentNode unit test ──────────────────────────────────────────────
-
-    @Test
-    void styleAgent_returnsFindingsKey() throws Exception {
-        String mockDiff = """
-            +   public void x(String a, int b, boolean c, List d, Map e) {
-            +       if (a != null) { if (b > 0) { if (c) { for (Object o : d) { } } } }
-            +   }
-            """;
-
-        CodeReviewState state = new CodeReviewState(Map.of(
-            "diffContent",  mockDiff,
-            "prTitle",      "Add processing method",
-            "changedFiles", java.util.List.of("Processor.java")
-        ));
-
-        Map<String, Object> result = styleAgentNode.apply(state);
-
-        assertThat(result).containsKey("styleFindings");
-        assertThat(result.get("styleFindings").toString()).isNotBlank();
-    }
-
-    // ── SupervisorNode unit test ──────────────────────────────────────────────
-
-    @Test
-    void supervisorNode_mergesAllFindings() throws Exception {
-        CodeReviewState state = new CodeReviewState(Map.of(
-            "securityFindings", "SEVERITY: CRITICAL\nFILE: Foo.java\nLINE: 10\nCATEGORY: SQL_INJECTION\nAGENT: SECURITY\nISSUE: SQL injection risk\nFIX: Use prepared statements\n---",
-            "logicFindings",    "SEVERITY: MAJOR\nFILE: Bar.java\nLINE: 20\nCATEGORY: NULL_DEREFERENCE\nAGENT: LOGIC\nISSUE: Null pointer risk\nFIX: Add null check\n---",
-            "styleFindings",    "NO_STYLE_ISSUES_FOUND"
+            "mergedFindings", findings
         ));
 
         Map<String, Object> result = supervisorNode.apply(state);
 
         assertThat(result).containsKey("mergedFindings");
-        String merged = result.get("mergedFindings").toString();
-        assertThat(merged).isNotBlank();
+        assertThat(result.get("mergedFindings").toString()).isEqualTo(findings);
     }
 }
